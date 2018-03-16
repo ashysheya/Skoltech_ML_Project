@@ -25,7 +25,7 @@ _MYSTEM_TO_WORD2VEC_POS_TAGS_MAPPING = {
     'V': 'VERB'
 }
 
-def load_sentences_and_labels(directory_name):
+def load_sentences_and_labels(directory_name, return_all_tags=False):
 
     # https://github.com/dialogue-evaluation/factRuEval-2016
     # devset for training/validation
@@ -39,6 +39,9 @@ def load_sentences_and_labels(directory_name):
 
     sentences = []
     labels = []
+
+    if return_all_tags:
+        tags = set()
 
     for token_filename, span_filename in zip(token_filenames, span_filenames):
 
@@ -82,12 +85,16 @@ def load_sentences_and_labels(directory_name):
                 else:
                     label = 'none'
 
+                if return_all_tags:
+                    tags.add(label)
                 current_sentence.append(token)
                 current_sentence_labels.append(label)
 
+    if return_all_tags:
+        return np.array(sentences), np.array(labels), np.array(list(tags))
     return np.array(sentences), np.array(labels)
 
-def _get_normalized_sentence(sentence):
+def _get_normalized_sentence(sentence, add_w2v_tag=True):
 
     # Requires mystem executable
     
@@ -144,20 +151,24 @@ def _get_normalized_sentence(sentence):
 
     for parsed_token in parsed_sentence:
 
-        if 'analysis' in parsed_token and len( parsed_token['analysis']) > 0:
+        if 'analysis' in parsed_token and len(parsed_token['analysis']) > 0:
 
             mystem_pos_tag = re.findall('^[^=,]*', parsed_token['analysis'][0]['gr'])[0]
             word2vec_pos_tag = _MYSTEM_TO_WORD2VEC_POS_TAGS_MAPPING[mystem_pos_tag]
-            normalized_token = parsed_token['analysis'][0]['lex'] + '_' + word2vec_pos_tag
+            normalized_token = parsed_token['analysis'][0]['lex']
+            if add_w2v_tag:
+                normalized_token += '_' + word2vec_pos_tag
 
         else:
-            normalized_token = parsed_token['text'] + '_X'
+            normalized_token = parsed_token['text']
+            if add_w2v_tag:
+                normalized_token += '_X'
 
         normalized_sentence.append(normalized_token)
 
     return normalized_sentence
 
-def get_normalized_sentences(sentences):
+def get_normalized_sentences(sentences, add_w2v_tag=True):
 
     print('Sentence normalization')
 
@@ -165,7 +176,7 @@ def get_normalized_sentences(sentences):
 
     for index, sentence in enumerate(sentences):
 
-        normalized_sentences.append(_get_normalized_sentence(sentence))
+        normalized_sentences.append(_get_normalized_sentence(sentence, add_w2v_tag))
 
         if (index + 1)%100 == 0:
             print('{} sentences normalized'.format(index + 1))
