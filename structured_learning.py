@@ -52,75 +52,29 @@ def tagging_quality(ref, out):
             else:
                 false_negative += 1
     precision = true_positive/(true_positive + false_positive)
-    recall = true_positive/(true_positive + false_positive)
+    recall = true_positive/(true_positive + false_negative)
     f_measure = 2.0*precision*recall/(precision + recall)
     return TaggingQuality(acc=ncorrect / nwords, f1=f_measure)
 
 
-def read_tagged_sentences(path, return_tags=True, saved_file=None):
+def read_tagged_sentences(path):
     """
     Read tagged sentences from file and return array of TaggedSentence.
     """
-    if saved_file is None:
-        if return_tags:
-            unnormalized_sent, labels, tags = utils.load_sentences_and_labels(path, True)
-
-        else:
-            unnormalized_sent, labels = utils.load_sentences_and_labels(path, False)
-        sent = utils.get_normalized_sentences(unnormalized_sent, False)
-        sentences = []
-        for sentence, label in zip(sent, labels):
-            sentences.append([])
-            for word, tag in zip(sentence, label):
+    sentences = [[]]
+    with open(path, 'r') as fsent:
+        for line in fsent:
+            line = line.strip()
+            if len(line) == 0 and len(sentences[-1]) > 0:
+                sentences.append([])
+            else:
+                parts = line.split()
+                word, tag = parts[0], parts[1]
                 sentences[-1].append(TaggedWord(text=word, tag=tag))
-        if return_tags:
-            return sentences, tags
-        return sentences
-    else:
-        sentences = [[]]
-        with open(saved_file, 'r') as fsent:
-            for line in fsent:
-                line = line.strip()
-                if len(line) == 0 and len(sentences[-1]) > 0:
-                    sentences.append([])
-                else:
-                    parts = line.split()
-                    word, tag = parts[0], parts[1]
-                    sentences[-1].append(TaggedWord(text=word, tag=tag))
-        if len(sentences[-1]) == 0:
-            del sentences[-1]
-        return sentences
+    if len(sentences[-1]) == 0:
+        del sentences[-1]
+    return sentences
 
-
-def read_tags(path):
-    """
-    Read a list of possible tags from file and return the list.
-    """
-
-    tags = []
-    with open(path, 'r') as ftags:
-        for line in ftags:
-            tags.append(line.strip())
-    return tags
-
-
-def write_tags(tags):
-    """
-    Write tags to file
-    :param path:
-    :return:
-    """
-    with open('./tags', 'w') as ftags:
-        for tag in tags:
-            ftags.write(tag + '\n')
-
-
-def write_normalized_dataset(dataset, path):
-    with open(path, 'w') as fdataset:
-        for sentence in dataset:
-            for word in sentence:
-                fdataset.write(word.text + '\t' + word.tag + '\n')
-            fdataset.write('\n')
 
 ###############################################################################
 #                                                                             #
@@ -602,11 +556,11 @@ def TRAIN_add_cmdargs(subp):
     p = subp.add_parser('train')
 
     p.add_argument('--dataset',
-        help='train dataset', default='./devset')
+        help='train dataset', default='train')
     p.add_argument('--dataset-dev',
-        help='dev dataset', default='./testset')
-    p.add_argument('--val-size',
-        help='validation size', type=int, default=100)
+        help='dev dataset', default='val')
+    p.add_argument('--tags',
+        help='tags file', default='tags')
     p.add_argument('--model',
         help='NPZ model', type=str, default='model.npz')
     p.add_argument('--sgd-epochs',
@@ -639,22 +593,14 @@ def TRAIN(cmdargs):
 
     print('Reading train data...')
     # Parse cmdargs.
-    if os.path.exists('train'):
-        dataset = read_tagged_sentences(cmdargs.dataset, False, 'train')
-        tags = read_tags('tags')
-    else:
-        dataset, tags = read_tagged_sentences(cmdargs.dataset, True)
-        write_tags(tags)
-        write_normalized_dataset(dataset, 'train')
+    if not os.path.exists(cmdargs.dataset):
+        utils.dataset_reader()
 
-    print('Reading test data...')
-    if os.path.exists('test'):
-        dataset_dev = read_tagged_sentences(cmdargs.dataset_dev, False, 'test')
-    else:
-        dataset_dev = read_tagged_sentences(cmdargs.dataset_dev, False)
-        write_normalized_dataset(dataset_dev, 'test')
+    dataset = read_tagged_sentences(cmdargs.dataset)
+    tags = utils.read_tags(cmdargs.tags)
 
-    dataset_dev = dataset_dev[:cmdargs.val_size]
+    print('Reading validation data...')
+    dataset_dev = read_tagged_sentences(cmdargs.dataset_dev)
 
     params = None
     if os.path.exists(cmdargs.model):
@@ -706,11 +652,9 @@ def TEST_add_cmdargs(subp):
     p = subp.add_parser('test')
 
     p.add_argument('--tags',
-        help='tags file', type=str, default='./tags')
-    p.add_argument('--val-size',
-                   help='validation size', type=int, default=100)
+        help='tags file', type=str, default='tags')
     p.add_argument('--dataset',
-        help='test dataset', default='./testset')
+        help='test dataset', default='test')
     p.add_argument('--model',
         help='NPZ model', type=str, default='averaged.npz')
     p.add_argument('--tagger-src-window',
@@ -749,8 +693,8 @@ def tag_sentences(dataset, model, tagger_params, tags):
 
 def TEST(cmdargs):
     # Parse cmdargs.
-    tags = read_tags(cmdargs.tags)
-    dataset = read_tagged_sentences(cmdargs.dataset, False, 'test')[cmdargs.val_size:]
+    tags = utils.read_tags(cmdargs.tags)
+    dataset = read_tagged_sentences(cmdargs.dataset)
     params = pickle.load(open(cmdargs.model, 'rb'))
     tagger_params = TaggerParams(
         src_window=cmdargs.tagger_src_window,
@@ -767,10 +711,6 @@ def TEST(cmdargs):
     # Tag all sentences.
     tagged_sentences = tag_sentences(dataset=dataset, tagger_params=tagger_params,
                                      tags=tags, model=model)
-
-    # Write tagged sentences.
-    #for tagged_sentence in tagged_sentences:
-    #    write_tagged_sentence(tagged_sentence, 'en-ud-test-tags.conllu')
 
     # Measure and print quality.
     q = pprint.pformat(tagging_quality(out=tagged_sentences, ref=dataset))
