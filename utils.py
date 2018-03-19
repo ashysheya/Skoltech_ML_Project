@@ -183,11 +183,12 @@ def get_normalized_sentences(sentences, add_w2v_tag=True):
 
     return normalized_sentences
 
-def load_word2vec():
+
+def load_word2vec(word2vec_filename=None):
 
     # http://rusvectores.org/static/models/rusvectores4/ruwikiruscorpora/ruwikiruscorpora_upos_skipgram_300_2_2018.vec.gz
-    
-    word2vec_filename = 'ruwikiruscorpora_superbigrams_2_1_2.vec'
+    if word2vec_filename is None:
+        word2vec_filename = 'ruwikiruscorpora_superbigrams_2_1_2.vec'
 
     word2vec = {}
 
@@ -337,3 +338,87 @@ def encode_sentences_and_labels(sentences, normalized_sentences, labels, codes=N
     result += (encoded_symbols, encoded_tokens, encoded_labels)
 
     return result
+
+
+def _write_data_to_file(filename, sentences, labels):
+    with open(filename, 'w') as fout:
+        for sentence, label in zip(sentences, labels):
+            for word, tag in zip(sentence, label):
+                fout.write(word + '\t' + tag + '\n')
+            fout.write('\n')
+
+
+def dataset_writer(path_to_train='./devset', path_to_test='./testset', use_w2v=False,
+                   num_test_sent=500, validation_part=0.2):
+    sent_train, labels_train, tags = load_sentences_and_labels(path_to_train, True)
+    sent_train = get_normalized_sentences(sent_train, use_w2v)
+    sent_test, labels_test = load_sentences_and_labels(path_to_test, False)
+    sent_test = get_normalized_sentences(sent_test, use_w2v)
+
+    final_sentences_test, final_labels_test = sent_test[-num_test_sent:], \
+                                              labels_test[-num_test_sent:]
+
+    sent_train = np.concatenate((sent_train, sent_test[:-num_test_sent]), axis=0)
+    labels_train = np.concatenate((labels_train, labels_test[:-num_test_sent]), axis=0)
+
+    num_val_sent = int(len(sent_train)*validation_part)
+
+    final_sentences_train, final_labels_train = sent_train[:-num_val_sent], \
+                                                labels_train[:-num_val_sent]
+
+    final_sentences_val, final_labels_val = sent_train[-num_val_sent:], \
+                                            labels_train[-num_val_sent:]
+
+    with open('tags', 'w') as ftags:
+        for tag in sorted(tags):
+            ftags.write(tag + '\n')
+
+    if use_w2v:
+        _write_data_to_file('test_w2v', final_sentences_test, final_labels_test)
+        _write_data_to_file('val_w2v', final_sentences_val, final_labels_val)
+        _write_data_to_file('train_w2v', final_sentences_train, final_labels_train)
+
+    else:
+        _write_data_to_file('test', final_sentences_test, final_labels_test)
+        _write_data_to_file('val', final_sentences_val, final_labels_val)
+        _write_data_to_file('train', final_sentences_train, final_labels_train)
+
+
+def _read_data_from_file(filename):
+    sentences = [[]]
+    labels = [[]]
+    with open(filename, 'r') as fin:
+        for line in fin:
+            line = line.strip()
+            if len(line) == 0:
+                sentences.append([])
+                labels.append([])
+            else:
+                word, label = line.split()
+                sentences[-1].append(word)
+                labels[-1].append(label)
+    if len(sentences[-1]) == 0:
+        del sentences[-1]
+        del labels[-1]
+    return sentences, labels
+
+
+def dataset_reader(use_w2v=False):
+    filenames = {'train': 'train', 'test': 'test', 'val': 'val'}
+    data = {}
+    if use_w2v:
+        filenames = {name: name+'_w2v' for name in filenames}
+    for data_type, filename in filenames.items():
+        data[data_type] = _read_data_from_file(filename)
+    return data
+
+
+def read_tags(path):
+    """
+    Read a list of possible tags from file and return the list.
+    """
+    tags = []
+    with open(path, 'r') as ftags:
+        for line in ftags:
+            tags.append(line.strip())
+    return tags
