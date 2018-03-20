@@ -3,6 +3,7 @@ import glob
 import subprocess
 import json
 import re
+import torch
 
 _TOKEN_SPECIAL_CODES = {'__unknown__': 0, '__padding__': 1, '__begin__': 2,
                        '__end__': 3}
